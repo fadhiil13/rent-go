@@ -1,0 +1,196 @@
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { VehicleStatus, Role, Prisma } from '@prisma/client';
+import { CreateRentalDto } from './dto/create-rental.dto';
+import { UpdateRentalStatusDto } from './dto/update-rental.dto';
+import { QueryRentalDto } from './dto/query-rental.dto';
+import { JwtPayload } from '../common/decorators/current-user.decorator';
+
+@Injectable()
+export class RentalsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private convertDecimal(rental: Record<string, unknown>): Record<string, unknown> {
+    const result = { ...rental };
+
+    // Convert top-level totalPrice
+    if (result.totalPrice !== undefined) {
+      result.totalPrice = Number(result.totalPrice);
+    }
+
+    // Convert nested vehicle.pricePerDay
+    if (result.vehicle && typeof result.vehicle === 'object') {
+      const vehicle = { ...(result.vehicle as Record<string, unknown>) };
+      if (vehicle.pricePerDay !== undefined) {
+        vehicle.pricePerDay = Number(vehicle.pricePerDay);
+      }
+      result.vehicle = vehicle;
+    }
+
+    return result;
+  }
+
+  private excludePassword(rental: Record<string, unknown>): Record<string, unknown> {
+    const result = { ...rental };
+    if (result.user && typeof result.user === 'object') {
+      const { password: _pw, ...safeUser } = result.user as Record<string, unknown>;
+      result.user = safeUser;
+    }
+    return result;
+  }
+
+  private toPlain(rental: unknown): Record<string, unknown> {
+    let result = rental as Record<string, unknown>;
+    result = this.convertDecimal(result);
+    result = this.excludePassword(result);
+    return result;
+  }
+
+  // ── create ───────────────────────────────────────────────────────────────
+
+  async create(userId: string, dto: CreateRentalDto) {
+    // 1. Ambil kendaraan
+    const vehicle = await this.prisma.vehicle.findUnique({
+      where: { id: dto.vehicleId },
+    });
+    if (!vehicle) {
+      throw new NotFoundException('Kendaraan tidak ditemukan');
+    }
+
+    // 2. Validasi tanggal
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+
+    if (endDate <= startDate) {
+      throw new BadRequestException(
+        'Tanggal selesai harus setelah tanggal mulai',
+      );
+    }
+
+    // 3. Validasi status kendaraan
+    if (vehicle.status !== VehicleStatus.AVAILABLE) {
+      throw new BadRequestException('Kendaraan tidak tersedia');
+    }
+
+    // 4. Hitung totalPrice
+    const diffMs = endDate.getTime() - startDate.getTime();
+    const jumlahHari = Math.max(1, Math.ceil(diffMs / 86400000));
+    const pricePerDay = Number(vehicle.pricePerDay);
+    const totalPrice = pricePerDay * jumlahHari;
+
+    // 5. Buat rental (status PENDING)
+    // Catatan: vehicle status tidak diubah ke RENTED di sini.
+    // Admin yang akan mengubah via PATCH /rentals/:id/status saat dikonfirmasi.
+    const rental = await this.prisma.rental.create({
+      data: {
+        userId,
+        vehicleId: dto.vehicleId,
+        startDate,
+        endDate,
+        totalPrice,
+        status: 'PENDING',
+      },
+      include: {
+        vehicle: true,
+        user: true,
+      },
+    });
+
+    return {
+      message: 'Rental berhasil dibuat',
+      data: this.toPlain(rental as unknown as Record<string, unknown>),
+    };
+  }
+
+  // ── findAll ──────────────────────────────────────────────────────────────
+
+  async findAll(currentUser: JwtPayload, query: QueryRentalDto) {
+    const where: Prisma.RentalWhereInput = {};
+
+    // ADMIN melihat semua; USER hanya miliknya
+    if (currentUser.role === Role.USER) {
+      where.userId = currentUser.sub;
+    }
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    const rentals = await this.prisma.rental.findMany({
+      where,
+      include: {
+        vehicle: true,
+        user: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      message: 'Daftar rental',
+      data: rentals.map((r) =>
+        this.toPlain(r as unknown as Record<string, unknown>),
+      ),
+    };
+  }
+
+  // ── findOne ──────────────────────────────────────────────────────────────
+
+  async findOne(currentUser: JwtPayload, id: string) {
+    const rental = await this.prisma.rental.findUnique({
+      where: { id },
+      include: {
+        vehicle: true,
+        user: true,
+      },
+    });
+
+    if (!rental) {
+      throw new NotFoundException('Rental tidak ditemukan');
+    }
+
+    // USER hanya boleh lihat miliknya
+    if (
+      currentUser.role === Role.USER &&
+      rental.userId !== currentUser.sub
+    ) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki akses ke rental ini',
+      );
+    }
+
+    return {
+      message: 'Detail rental',
+      data: this.toPlain(rental as unknown as Record<string, unknown>),
+    };
+  }
+
+  // ── updateStatus ─────────────────────────────────────────────────────────
+
+  async updateStatus(id: string, dto: UpdateRentalStatusDto) {
+    const rental = await this.prisma.rental.findUnique({ where: { id } });
+    if (!rental) {
+      throw new NotFoundException('Rental tidak ditemukan');
+    }
+
+    const updated = await this.prisma.rental.update({
+      where: { id },
+      data: { status: dto.status },
+      include: {
+        vehicle: true,
+        user: true,
+      },
+    });
+
+    return {
+      message: 'Status rental berhasil diperbarui',
+      data: this.toPlain(updated as unknown as Record<string, unknown>),
+    };
+  }
+}
