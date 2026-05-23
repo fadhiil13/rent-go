@@ -3,6 +3,9 @@ cmds = ["npm install"]
 
 [phases.build]
 cmds = [
-  "npm run build",
-  "npx prisma generate"
+  "npx prisma generate",
+  "npm run build"
 ]
+
+[start]
+cmd = "npm run db:deploy && npm run start:prod"
