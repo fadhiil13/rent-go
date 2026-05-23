@@ -8,4 +8,4 @@ cmds = [
 ]
 
 [start]
-cmd = "npx prisma migrate resolve --applied 20260523061955_tambah_kendaraan_dan_rental && npm run db:deploy && npm run start:prod"
+cmd = "npx prisma db push --force-reset && npm run start:prod"
