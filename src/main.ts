@@ -60,7 +60,7 @@ async function bootstrap() {
   // ── Start ──────────────────────────────────────────────────────────────────
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') ?? 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 RentGo API running on: http://localhost:${port}`);
   console.log(`📄 Swagger docs available at: http://localhost:${port}/docs`);
