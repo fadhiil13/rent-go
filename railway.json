@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm run db:deploy && npm run start:prod",
+    "startCommand": "npx prisma db push --force-reset && npm run start:prod",
     "restartPolicyType": "ON_FAILURE"
   }
 }
