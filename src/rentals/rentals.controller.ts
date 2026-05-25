@@ -93,4 +93,19 @@ export class RentalsController {
   ) {
     return this.rentalsService.updateStatus(id, dto);
   }
+
+  // ── PATCH /rentals/:id/complete (ADMIN only) ───────────────────────────────
+  @Patch(':id/complete')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: '[ADMIN] Selesaikan rental — vehicle kembali AVAILABLE' })
+  @ApiParam({ name: 'id', description: 'UUID rental' })
+  @ApiResponse({ status: 200, description: 'Rental berhasil diselesaikan' })
+  @ApiResponse({ status: 400, description: 'Transisi status tidak valid / pembayaran belum lunas' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden – bukan admin' })
+  @ApiResponse({ status: 404, description: 'Rental tidak ditemukan' })
+  async complete(@Param('id') id: string) {
+    return this.rentalsService.complete(id);
+  }
 }

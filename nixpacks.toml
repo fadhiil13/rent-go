@@ -8,4 +8,4 @@ cmds = [
 ]
 
 [start]
-cmd = "npx prisma db push --force-reset && npm run start:prod"
+cmd = "npx prisma db push && npm run start:prod"

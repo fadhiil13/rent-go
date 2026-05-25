@@ -1,4 +1,4 @@
-import { PrismaClient, Role, VehicleType, VehicleStatus, RentalStatus } from '@prisma/client';
+import { PrismaClient, Role, VehicleType, VehicleStatus, RentalStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -173,16 +173,14 @@ async function main() {
     console.log('✅ Vehicles seeded:', Object.keys(createdVehicles).length, 'vehicles');
 
     // ── Rentals ────────────────────────────────────────────────────────────────
-    // Helper: calculate totalPrice (ceil days, min 1)
     function calcTotal(pricePerDay: number, startDate: Date, endDate: Date): number {
         const diffMs = endDate.getTime() - startDate.getTime();
         const days = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
         return pricePerDay * days;
     }
 
-    // Rental 1: user1 menyewa Toyota Avanza, status COMPLETED
     const rental1Start = new Date('2025-04-01T08:00:00Z');
-    const rental1End = new Date('2025-04-04T08:00:00Z'); // 3 hari
+    const rental1End   = new Date('2025-04-04T08:00:00Z');
     const rental1Price = calcTotal(350000, rental1Start, rental1End);
 
     await prisma.rental.upsert({
@@ -199,9 +197,8 @@ async function main() {
         },
     });
 
-    // Rental 2: user2 menyewa Honda Vario, status CONFIRMED
     const rental2Start = new Date('2025-05-10T08:00:00Z');
-    const rental2End = new Date('2025-05-12T08:00:00Z'); // 2 hari
+    const rental2End   = new Date('2025-05-12T08:00:00Z');
     const rental2Price = calcTotal(100000, rental2Start, rental2End);
 
     await prisma.rental.upsert({
@@ -218,9 +215,8 @@ async function main() {
         },
     });
 
-    // Rental 3: user1 menyewa Suzuki Jimny, status PENDING
     const rental3Start = new Date('2025-06-01T08:00:00Z');
-    const rental3End = new Date('2025-06-03T08:00:00Z'); // 2 hari
+    const rental3End   = new Date('2025-06-03T08:00:00Z');
     const rental3Price = calcTotal(750000, rental3Start, rental3End);
 
     await prisma.rental.upsert({
@@ -238,6 +234,33 @@ async function main() {
     });
 
     console.log('✅ Rentals seeded: 3 rentals');
+
+    // ── Payment & Invoice (hanya untuk rental COMPLETED) ──────────────────────
+    await prisma.payment.upsert({
+        where: { rentalId: 'seed-rental-00000001' },
+        update: {},
+        create: {
+            rentalId:  'seed-rental-00000001',
+            amount:    rental1Price,
+            method:    PaymentMethod.TRANSFER,
+            status:    PaymentStatus.PAID,
+            reference: 'REF-SEED-00000001',
+            paidAt:    new Date('2025-04-01T09:00:00Z'),
+        },
+    });
+
+    await prisma.invoice.upsert({
+        where: { rentalId: 'seed-rental-00000001' },
+        update: {},
+        create: {
+            rentalId:      'seed-rental-00000001',
+            invoiceNumber: 'INV-SEED-00000001',
+            amount:        rental1Price,
+            issuedAt:      new Date('2025-04-01T09:00:00Z'),
+        },
+    });
+
+    console.log('✅ Payment & Invoice seeded: rental COMPLETED');
     console.log('');
     console.log('🎉 Seed completed successfully!');
     console.log('');

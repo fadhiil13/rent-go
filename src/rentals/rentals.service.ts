@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { VehicleStatus, Role, Prisma } from '@prisma/client';
 import { CreateRentalDto } from './dto/create-rental.dto';
-import { UpdateRentalStatusDto } from './dto/update-rental.dto';
+import { UpdateRentalStatusDto } from './dto/update-rental-status.dto';
 import { QueryRentalDto } from './dto/query-rental.dto';
 import { JwtPayload } from '../common/decorators/current-user.decorator';
 
@@ -20,12 +20,10 @@ export class RentalsService {
   private convertDecimal(rental: Record<string, unknown>): Record<string, unknown> {
     const result = { ...rental };
 
-    // Convert top-level totalPrice
     if (result.totalPrice !== undefined) {
       result.totalPrice = Number(result.totalPrice);
     }
 
-    // Convert nested vehicle.pricePerDay
     if (result.vehicle && typeof result.vehicle === 'object') {
       const vehicle = { ...(result.vehicle as Record<string, unknown>) };
       if (vehicle.pricePerDay !== undefined) {
@@ -56,7 +54,6 @@ export class RentalsService {
   // ── create ───────────────────────────────────────────────────────────────
 
   async create(userId: string, dto: CreateRentalDto) {
-    // 1. Ambil kendaraan
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: dto.vehicleId },
     });
@@ -64,30 +61,22 @@ export class RentalsService {
       throw new NotFoundException('Kendaraan tidak ditemukan');
     }
 
-    // 2. Validasi tanggal
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
     if (endDate <= startDate) {
-      throw new BadRequestException(
-        'Tanggal selesai harus setelah tanggal mulai',
-      );
+      throw new BadRequestException('Tanggal selesai harus setelah tanggal mulai');
     }
 
-    // 3. Validasi status kendaraan
     if (vehicle.status !== VehicleStatus.AVAILABLE) {
       throw new BadRequestException('Kendaraan tidak tersedia');
     }
 
-    // 4. Hitung totalPrice
     const diffMs = endDate.getTime() - startDate.getTime();
     const jumlahHari = Math.max(1, Math.ceil(diffMs / 86400000));
     const pricePerDay = Number(vehicle.pricePerDay);
     const totalPrice = pricePerDay * jumlahHari;
 
-    // 5. Buat rental (status PENDING)
-    // Catatan: vehicle status tidak diubah ke RENTED di sini.
-    // Admin yang akan mengubah via PATCH /rentals/:id/status saat dikonfirmasi.
     const rental = await this.prisma.rental.create({
       data: {
         userId,
@@ -114,7 +103,6 @@ export class RentalsService {
   async findAll(currentUser: JwtPayload, query: QueryRentalDto) {
     const where: Prisma.RentalWhereInput = {};
 
-    // ADMIN melihat semua; USER hanya miliknya
     if (currentUser.role === Role.USER) {
       where.userId = currentUser.sub;
     }
@@ -155,14 +143,11 @@ export class RentalsService {
       throw new NotFoundException('Rental tidak ditemukan');
     }
 
-    // USER hanya boleh lihat miliknya
     if (
       currentUser.role === Role.USER &&
       rental.userId !== currentUser.sub
     ) {
-      throw new ForbiddenException(
-        'Anda tidak memiliki akses ke rental ini',
-      );
+      throw new ForbiddenException('Anda tidak memiliki akses ke rental ini');
     }
 
     return {
@@ -190,6 +175,59 @@ export class RentalsService {
 
     return {
       message: 'Status rental berhasil diperbarui',
+      data: this.toPlain(updated as unknown as Record<string, unknown>),
+    };
+  }
+
+  // ── complete ──────────────────────────────────────────────────────────────
+
+  async complete(id: string) {
+    const rental = await this.prisma.rental.findUnique({
+      where: { id },
+      include: { vehicle: true, user: true },
+    });
+    if (!rental) throw new NotFoundException('Rental tidak ditemukan');
+
+    // Validasi transisi status
+    if (rental.status === 'COMPLETED') {
+      throw new BadRequestException('Rental sudah selesai');
+    }
+    if (rental.status === 'CANCELLED') {
+      throw new BadRequestException('Rental sudah dibatalkan');
+    }
+    if (rental.status === 'PENDING') {
+      throw new BadRequestException('Rental belum dikonfirmasi/dibayar');
+    }
+    // Di sini status pasti CONFIRMED atau ONGOING
+
+    // Cek payment PAID (aktif — wajib lunas sebelum complete)
+    const paidPayment = await this.prisma.payment.findFirst({
+      where: { rentalId: id, status: 'PAID' },
+    });
+    if (!paidPayment) {
+      throw new BadRequestException('Pembayaran belum lunas');
+    }
+
+    // Transaksi: selesaikan rental + kembalikan kendaraan ke AVAILABLE
+    await this.prisma.$transaction([
+      this.prisma.rental.update({
+        where: { id },
+        data: { status: 'COMPLETED' },
+      }),
+      this.prisma.vehicle.update({
+        where: { id: rental.vehicleId },
+        data: { status: 'AVAILABLE' },
+      }),
+    ]);
+
+    // Ambil data terbaru untuk response
+    const updated = await this.prisma.rental.findUnique({
+      where: { id },
+      include: { vehicle: true, user: true },
+    });
+
+    return {
+      message: 'Rental diselesaikan',
       data: this.toPlain(updated as unknown as Record<string, unknown>),
     };
   }

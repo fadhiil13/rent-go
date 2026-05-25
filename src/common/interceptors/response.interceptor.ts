@@ -21,7 +21,6 @@ export class ResponseInterceptor implements NestInterceptor {
         const data = hasDataKey
           ? (result as { data: unknown }).data
           : result ?? null;
-
         return { success: true, message, data };
       }),
     );

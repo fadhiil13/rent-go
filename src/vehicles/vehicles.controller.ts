@@ -1,25 +1,32 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
+  BadRequestException,
   Body,
-  Param,
-  Query,
-  UseGuards,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
   ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { VehiclesService } from './vehicles.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateVehicleDto } from './dto/create-vehicle.dto';
 import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { QueryVehicleDto } from './dto/query-vehicle.dto';
@@ -30,7 +37,10 @@ import { Roles } from '../common/decorators/roles.decorator';
 @ApiTags('Vehicles')
 @Controller('vehicles')
 export class VehiclesController {
-  constructor(private readonly vehiclesService: VehiclesService) {}
+  constructor(
+    private readonly vehiclesService: VehiclesService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   // ── GET /vehicles (PUBLIK) ─────────────────────────────────────────────────
   @Get()
@@ -38,6 +48,36 @@ export class VehiclesController {
   @ApiResponse({ status: 200, description: 'Daftar kendaraan berhasil diambil' })
   async findAll(@Query() query: QueryVehicleDto) {
     return this.vehiclesService.findAll(query);
+  }
+
+  // ── POST /vehicles/upload (ADMIN) ──────────────────────────────────────────
+  // HARUS sebelum /:id agar tidak tertangkap sebagai param
+  @Post('upload')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({ summary: '[ADMIN] Upload gambar kendaraan ke Cloudinary' })
+  @ApiResponse({ status: 201, description: 'Upload berhasil, kembalikan url & publicId' })
+  @ApiResponse({ status: 400, description: 'File tidak ada / bukan gambar / >5MB' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden – bukan admin' })
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File tidak ada');
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File harus berupa gambar');
+    }
+
+    const { url, publicId } = await this.cloudinaryService.uploadImage(file);
+    return { message: 'Upload berhasil', data: { url, publicId } };
   }
 
   // ── GET /vehicles/:id (PUBLIK) ─────────────────────────────────────────────
@@ -48,6 +88,42 @@ export class VehiclesController {
   @ApiResponse({ status: 404, description: 'Kendaraan tidak ditemukan' })
   async findOne(@Param('id') id: string) {
     return this.vehiclesService.findOne(id);
+  }
+
+  // ── POST /vehicles/:id/image (ADMIN) ───────────────────────────────────────
+  @Post(':id/image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({ summary: '[ADMIN] Upload & tempel gambar langsung ke kendaraan' })
+  @ApiResponse({ status: 200, description: 'Gambar kendaraan diperbarui' })
+  @ApiResponse({ status: 400, description: 'File tidak ada / bukan gambar / >5MB' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden – bukan admin' })
+  @ApiResponse({ status: 404, description: 'Kendaraan tidak ditemukan' })
+  async uploadVehicleImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('File tidak ada');
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File harus berupa gambar');
+    }
+
+    await this.vehiclesService.findOne(id);
+    const { url } = await this.cloudinaryService.uploadImage(file);
+    const updated = await this.vehiclesService.update(id, { imageUrl: url });
+
+    return { message: 'Gambar kendaraan diperbarui', data: updated.data };
   }
 
   // ── POST /vehicles (ADMIN) ─────────────────────────────────────────────────
