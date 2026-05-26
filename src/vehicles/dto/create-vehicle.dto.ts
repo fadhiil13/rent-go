@@ -50,6 +50,14 @@ export class CreateVehicleDto {
   pricePerDay: number;
 
   @ApiPropertyOptional({
+    example: 'Surabaya',
+    description: 'Kota lokasi kendaraan (contoh: Surabaya, Jakarta Selatan, Bandung)',
+  })
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional({
     enum: VehicleStatus,
     example: VehicleStatus.AVAILABLE,
     description: 'Status kendaraan (default: AVAILABLE)',

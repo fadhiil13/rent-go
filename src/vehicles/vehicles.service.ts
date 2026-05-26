@@ -13,7 +13,6 @@ import { QueryVehicleDto } from './dto/query-vehicle.dto';
 export class VehiclesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Konversi Decimal -> Number agar konsisten di JSON response
   private toPlain(vehicle: Record<string, unknown>) {
     return {
       ...vehicle,
@@ -22,16 +21,19 @@ export class VehiclesService {
   }
 
   async findAll(query: QueryVehicleDto) {
-    const { type, status, search, page = 1, limit = 10 } = query;
+    const { type, status, location, search, page = 1, limit = 10 } = query;
 
-    // ── Build where clause ─────────────────────────────────────────────────
     const where: Prisma.VehicleWhereInput = {};
 
     if (type) where.type = type;
     if (status) where.status = status;
 
+    // Filter lokasi — contains agar "Jakarta" cocok dengan "Jakarta Selatan"
+    if (location) {
+      where.location = { contains: location };
+    }
+
     if (search) {
-      // MySQL: contains tanpa mode:'insensitive' (collation sudah case-insensitive)
       where.OR = [
         { name: { contains: search } },
         { brand: { contains: search } },
@@ -39,7 +41,6 @@ export class VehiclesService {
       ];
     }
 
-    // ── Pagination ─────────────────────────────────────────────────────────
     const skip = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
@@ -80,8 +81,6 @@ export class VehiclesService {
   }
 
   async create(dto: CreateVehicleDto) {
-    // plateNumber duplikat akan ditangkap filter P2002 di HttpExceptionFilter
-    // tapi kita bisa juga cek manual untuk pesan lebih spesifik
     const existing = await this.prisma.vehicle.findUnique({
       where: { plateNumber: dto.plateNumber },
     });
@@ -99,6 +98,7 @@ export class VehiclesService {
         plateNumber: dto.plateNumber,
         pricePerDay: dto.pricePerDay,
         status: dto.status,
+        location: dto.location,       // ← tambah
         imageUrl: dto.imageUrl,
         description: dto.description,
       },
@@ -111,10 +111,8 @@ export class VehiclesService {
   }
 
   async update(id: string, dto: UpdateVehicleDto) {
-    // Pastikan kendaraan ada
     await this.findOne(id);
 
-    // Cek plateNumber baru tidak konflik dengan kendaraan lain
     if (dto.plateNumber) {
       const conflict = await this.prisma.vehicle.findUnique({
         where: { plateNumber: dto.plateNumber },
@@ -135,6 +133,7 @@ export class VehiclesService {
         ...(dto.plateNumber !== undefined && { plateNumber: dto.plateNumber }),
         ...(dto.pricePerDay !== undefined && { pricePerDay: dto.pricePerDay }),
         ...(dto.status !== undefined && { status: dto.status }),
+        ...(dto.location !== undefined && { location: dto.location }),   // ← tambah
         ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
         ...(dto.description !== undefined && { description: dto.description }),
       },
@@ -147,9 +146,7 @@ export class VehiclesService {
   }
 
   async remove(id: string) {
-    // Pastikan kendaraan ada
     await this.findOne(id);
-
     await this.prisma.vehicle.delete({ where: { id } });
 
     return {

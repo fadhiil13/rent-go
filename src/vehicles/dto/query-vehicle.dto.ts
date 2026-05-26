@@ -14,6 +14,14 @@ export class QueryVehicleDto {
   @IsEnum(VehicleStatus)
   status?: VehicleStatus;
 
+  @ApiPropertyOptional({
+    example: 'Surabaya',
+    description: 'Filter berdasarkan kota lokasi kendaraan',
+  })
+  @IsOptional()
+  @IsString()
+  location?: string;
+
   @ApiPropertyOptional({ example: 'toyota', description: 'Cari berdasarkan nama, merek, atau model' })
   @IsOptional()
   @IsString()

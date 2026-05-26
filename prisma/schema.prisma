@@ -69,6 +69,7 @@ model Vehicle {
   plateNumber String        @unique
   pricePerDay Decimal       @db.Decimal(12, 2)
   status      VehicleStatus @default(AVAILABLE)
+  location    String?       // ← tambah ini
   imageUrl    String?
   description String?       @db.Text
   rentals     Rental[]
