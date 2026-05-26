@@ -188,7 +188,6 @@ export class RentalsService {
     });
     if (!rental) throw new NotFoundException('Rental tidak ditemukan');
 
-    // Validasi transisi status
     if (rental.status === 'COMPLETED') {
       throw new BadRequestException('Rental sudah selesai');
     }
@@ -198,9 +197,7 @@ export class RentalsService {
     if (rental.status === 'PENDING') {
       throw new BadRequestException('Rental belum dikonfirmasi/dibayar');
     }
-    // Di sini status pasti CONFIRMED atau ONGOING
 
-    // Cek payment PAID (aktif — wajib lunas sebelum complete)
     const paidPayment = await this.prisma.payment.findFirst({
       where: { rentalId: id, status: 'PAID' },
     });
@@ -208,7 +205,6 @@ export class RentalsService {
       throw new BadRequestException('Pembayaran belum lunas');
     }
 
-    // Transaksi: selesaikan rental + kembalikan kendaraan ke AVAILABLE
     await this.prisma.$transaction([
       this.prisma.rental.update({
         where: { id },
@@ -220,7 +216,6 @@ export class RentalsService {
       }),
     ]);
 
-    // Ambil data terbaru untuk response
     const updated = await this.prisma.rental.findUnique({
       where: { id },
       include: { vehicle: true, user: true },
@@ -228,6 +223,53 @@ export class RentalsService {
 
     return {
       message: 'Rental diselesaikan',
+      data: this.toPlain(updated as unknown as Record<string, unknown>),
+    };
+  }
+
+  // ── cancel ────────────────────────────────────────────────────────────────
+
+  async cancel(currentUser: JwtPayload, id: string) {
+    const rental = await this.prisma.rental.findUnique({
+      where: { id },
+      include: { vehicle: true, user: true },
+    });
+    if (!rental) throw new NotFoundException('Rental tidak ditemukan');
+
+    // USER hanya bisa cancel miliknya
+    if (
+      (currentUser.role as Role) === Role.USER &&
+      rental.userId !== currentUser.sub
+    ) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke rental ini');
+    }
+
+    // Validasi status
+    if (rental.status === 'CANCELLED') {
+      throw new BadRequestException('Rental sudah dibatalkan');
+    }
+    if (rental.status === 'COMPLETED') {
+      throw new BadRequestException('Rental sudah selesai');
+    }
+    if (rental.status === 'CONFIRMED' || rental.status === 'ONGOING') {
+      throw new BadRequestException(
+        'Rental sudah dikonfirmasi, hubungi admin untuk membatalkan',
+      );
+    }
+    // Di sini status pasti PENDING
+
+    await this.prisma.rental.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+    });
+
+    const updated = await this.prisma.rental.findUnique({
+      where: { id },
+      include: { vehicle: true, user: true },
+    });
+
+    return {
+      message: 'Rental berhasil dibatalkan',
       data: this.toPlain(updated as unknown as Record<string, unknown>),
     };
   }

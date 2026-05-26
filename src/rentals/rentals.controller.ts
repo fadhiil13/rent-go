@@ -108,4 +108,22 @@ export class RentalsController {
   async complete(@Param('id') id: string) {
     return this.rentalsService.complete(id);
   }
+  
+  // ── PATCH /rentals/:id/cancel (USER & ADMIN) ───────────────────────────────
+@Patch(':id/cancel')
+@ApiOperation({ summary: '[USER] Batalkan rental — hanya jika masih PENDING' })
+@ApiParam({ name: 'id', description: 'UUID rental' })
+@ApiResponse({ status: 200, description: 'Rental berhasil dibatalkan' })
+@ApiResponse({ status: 400, description: 'Status tidak bisa dibatalkan' })
+@ApiResponse({ status: 401, description: 'Unauthorized' })
+@ApiResponse({ status: 403, description: 'Bukan rental milik Anda' })
+@ApiResponse({ status: 404, description: 'Rental tidak ditemukan' })
+async cancel(
+  @CurrentUser() currentUser: JwtPayload,
+  @Param('id') id: string,
+) {
+  return this.rentalsService.cancel(currentUser, id);
+}
+
+
 }
