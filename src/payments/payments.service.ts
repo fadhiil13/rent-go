@@ -137,7 +137,6 @@ export class PaymentsService {
 
     const [updatedPayment] = await this.prisma.$transaction(ops);
 
-    // Auto-generate invoice setelah transaksi sukses (idempotent)
     await this.invoicesService.generateForRental(payment.rentalId);
 
     return {
@@ -166,17 +165,36 @@ export class PaymentsService {
 
   // GET /payments (admin)
   async findAllAdmin(query: QueryPaymentDto = {}) {
-    const { status } = query;
+    const { status, page = 1, limit = 10 } = query;
 
-    const payments = await this.prisma.payment.findMany({
-      where: { ...(status !== undefined && { status }) },
-      include: { rental: { include: { vehicle: true, user: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+    const where: Prisma.PaymentWhereInput = {
+      ...(status !== undefined && { status }),
+    };
+
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where,
+        include: { rental: { include: { vehicle: true, user: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
 
     return {
       message: 'Daftar pembayaran',
-      data: payments.map(toPlain),
+      data: {
+        items: items.map(toPlain),
+        meta: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
     };
   }
 }

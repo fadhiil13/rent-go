@@ -101,30 +101,44 @@ export class RentalsService {
   // ── findAll ──────────────────────────────────────────────────────────────
 
   async findAll(currentUser: JwtPayload, query: QueryRentalDto) {
+    const { status, page = 1, limit = 10 } = query;
+
     const where: Prisma.RentalWhereInput = {};
 
     if (currentUser.role === Role.USER) {
       where.userId = currentUser.sub;
     }
 
-    if (query.status) {
-      where.status = query.status;
+    if (status) {
+      where.status = status;
     }
 
-    const rentals = await this.prisma.rental.findMany({
-      where,
-      include: {
-        vehicle: true,
-        user: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.rental.findMany({
+        where,
+        include: { vehicle: true, user: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.rental.count({ where }),
+    ]);
 
     return {
       message: 'Daftar rental',
-      data: rentals.map((r) =>
-        this.toPlain(r as unknown as Record<string, unknown>),
-      ),
+      data: {
+        items: items.map((r) =>
+          this.toPlain(r as unknown as Record<string, unknown>),
+        ),
+        meta: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
     };
   }
 
@@ -236,7 +250,6 @@ export class RentalsService {
     });
     if (!rental) throw new NotFoundException('Rental tidak ditemukan');
 
-    // USER hanya bisa cancel miliknya
     if (
       (currentUser.role as Role) === Role.USER &&
       rental.userId !== currentUser.sub
@@ -244,7 +257,6 @@ export class RentalsService {
       throw new ForbiddenException('Anda tidak memiliki akses ke rental ini');
     }
 
-    // Validasi status
     if (rental.status === 'CANCELLED') {
       throw new BadRequestException('Rental sudah dibatalkan');
     }
@@ -256,7 +268,6 @@ export class RentalsService {
         'Rental sudah dikonfirmasi, hubungi admin untuk membatalkan',
       );
     }
-    // Di sini status pasti PENDING
 
     await this.prisma.rental.update({
       where: { id },
