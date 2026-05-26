@@ -8,6 +8,7 @@
   import { PaymentsModule } from './payments/payments.module';
   import { InvoicesModule } from './invoices/invoices.module';
   import { DashboardModule } from './dashboard/dashboard.module';
+  import { ReviewsModule } from './reviews/reviews.module';
 
 
 
@@ -23,6 +24,8 @@
       PaymentsModule,
       InvoicesModule,
       DashboardModule,
+      ReviewsModule
+      
       
     ],
   })
