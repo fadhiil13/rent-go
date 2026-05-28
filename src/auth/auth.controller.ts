@@ -34,45 +34,45 @@ import { RolesGuard } from '../common/guards/roles.guard';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // ── POST /auth/register ────────────────────────────────────────────────────
+  // POST /auth/register
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Daftar akun baru (role default USER)' })
+  @ApiOperation({ summary: 'Daftar akun baru (data diri lengkap opsional)' })
   @ApiResponse({ status: 201, description: 'Registrasi berhasil' })
-  @ApiResponse({ status: 409, description: 'Email sudah terdaftar' })
+  @ApiResponse({ status: 409, description: 'Email / NIK sudah terdaftar' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
-  // ── POST /auth/login ───────────────────────────────────────────────────────
+  // POST /auth/login
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login dan dapatkan JWT access token' })
-  @ApiResponse({ status: 200, description: 'Login berhasil, mengembalikan accessToken' })
+  @ApiResponse({ status: 200, description: 'Login berhasil' })
   @ApiResponse({ status: 401, description: 'Email atau password salah' })
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
-  // ── GET /auth/me ───────────────────────────────────────────────────────────
+  // GET /auth/me
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Ambil profil user yang sedang login' })
+  @ApiOperation({ summary: 'Ambil profil lengkap user yang sedang login' })
   @ApiResponse({ status: 200, description: 'Profil berhasil diambil' })
-  @ApiResponse({ status: 401, description: 'Token tidak valid atau expired' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async me(@CurrentUser('sub') userId: string) {
     return this.authService.me(userId);
   }
 
-  // ── PATCH /auth/profile ────────────────────────────────────────────────────
+  // PATCH /auth/profile
   @Patch('profile')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Update profil sendiri (nama & phone)' })
+  @ApiOperation({ summary: 'Update data diri (nama, phone, NIK, TTL, gender, alamat)' })
   @ApiResponse({ status: 200, description: 'Profil berhasil diperbarui' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 404, description: 'User tidak ditemukan' })
+  @ApiResponse({ status: 409, description: 'NIK sudah dipakai akun lain' })
   async updateProfile(
     @CurrentUser('sub') userId: string,
     @Body() dto: UpdateProfileDto,
@@ -80,14 +80,12 @@ export class AuthController {
     return this.authService.updateProfile(userId, dto);
   }
 
-  // ── POST /auth/profile/avatar ──────────────────────────────────────────────
+  // POST /auth/profile/avatar
   @Post('profile/avatar')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }),
-  )
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -95,7 +93,7 @@ export class AuthController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  @ApiOperation({ summary: 'Upload foto profil ke Cloudinary (max 2MB)' })
+  @ApiOperation({ summary: 'Upload foto profil (max 2MB)' })
   @ApiResponse({ status: 200, description: 'Foto profil berhasil diperbarui' })
   @ApiResponse({ status: 400, description: 'File tidak ada / bukan gambar / >2MB' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -106,15 +104,12 @@ export class AuthController {
     return this.authService.uploadAvatar(userId, file);
   }
 
-  // ── GET /auth/admin-test ───────────────────────────────────────────────────
+  // GET /auth/admin-test
   @Get('admin-test')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: '[TEST SEMENTARA] Endpoint khusus ADMIN' })
-  @ApiResponse({ status: 200, description: 'Akses ADMIN berhasil' })
-  @ApiResponse({ status: 401, description: 'Belum login / token tidak valid' })
-  @ApiResponse({ status: 403, description: 'Bukan ADMIN' })
+  @ApiOperation({ summary: '[TEST] Endpoint khusus ADMIN' })
   adminTest() {
     return { message: 'RBAC OK', data: { ok: true } };
   }
