@@ -48,9 +48,7 @@ enum PaymentStatus {
 
 enum PaymentMethod {
   TRANSFER
-  VA
   EWALLET
-  CASH
   QRIS
 }
 

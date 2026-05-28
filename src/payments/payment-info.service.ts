@@ -37,29 +37,32 @@ export class PaymentInfoService {
           note: 'Setelah pembayaran berhasil, upload screenshot bukti pembayaran.',
         };
 
-      case PaymentMethod.VA:
-        return {
-          method,
-          instructions: 'Hubungi admin untuk mendapatkan nomor Virtual Account.',
-          note: 'Upload bukti setelah transfer.',
-        };
-
       case PaymentMethod.EWALLET:
         return {
           method,
-          instructions: 'Hubungi admin untuk mendapatkan nomor e-wallet tujuan.',
-          note: 'Upload screenshot bukti pembayaran.',
-        };
-
-      case PaymentMethod.CASH:
-        return {
-          method,
-          instructions: 'Bayar tunai langsung ke kantor RentGo.',
-          note: 'Bukti pembayaran berupa kwitansi akan diberikan admin.',
+          instructions: 'Transfer ke salah satu e-wallet berikut:',
+          accounts: [
+            {
+              platform: 'GoPay',
+              number: '089617463727',
+              accountName: 'Rent-Go',
+            },
+            {
+              platform: 'OVO',
+              number: '089617463727',
+              accountName: 'Rent-Go',
+            },
+            {
+              platform: 'Dana',
+              number: '089617463727',
+              accountName: 'Rent-Go',
+            },
+          ],
+          note: 'Setelah transfer, upload screenshot bukti pembayaran.',
         };
 
       default:
-        return { method, instructions: 'Hubungi admin.' };
+        return { method, instructions: 'Method pembayaran tidak tersedia.' };
     }
   }
 }
